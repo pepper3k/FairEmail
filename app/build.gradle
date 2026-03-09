@@ -611,6 +611,7 @@ dependencies {
     def evalex_version = "3.4.0"
     def image_cropper_version = "4.6.0"
     def heifwriter_version = "1.1.0"
+    def unifiedpush_version = "3.0.10"
 
     // https://mvnrepository.com/artifact/com.android.tools/desugar_jdk_libs?repo=google
     coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:$desugar_version"
@@ -897,4 +898,8 @@ dependencies {
 
     // https://developer.android.com/jetpack/androidx/releases/heifwriter
     implementation "androidx.heifwriter:heifwriter:$heifwriter_version"
+
+    // https://github.com/UnifiedPush/android-connector
+    // https://central.sonatype.com/artifact/org.unifiedpush.android/connector
+    implementation "org.unifiedpush.android:connector:$unifiedpush_version"
 }

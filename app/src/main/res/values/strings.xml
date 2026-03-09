@@ -1287,6 +1287,17 @@
     <string name="title_background">Background</string>
     <string name="title_transparent">Transparent</string>
     <string name="title_account_ondemand">Synchronize manually</string>
+    <string name="title_account_unifiedpush">Use UnifiedPush (no IMAP IDLE)</string>
+    <string name="title_account_unifiedpush_endpoint">Endpoint: %1$s</string>
+    <string name="title_account_unifiedpush_no_distributor">No UnifiedPush distributor found. Install ntfy or another UnifiedPush distributor app.</string>
+    <string name="title_account_unifiedpush_registering">Registering with %1$s…</string>
+    <string name="title_account_unifiedpush_registered">Registered with %1$s</string>
+    <string name="title_account_unifiedpush_failed">Registration failed</string>
+    <string name="title_account_unifiedpush_save_to_apply">Distributor: %1$s — save to apply</string>
+    <string name="title_account_unifiedpush_select">Select UnifiedPush distributor</string>
+    <string name="title_account_unifiedpush_test">Test notification</string>
+    <string name="title_account_unifiedpush_test_ok">Test notification sent</string>
+    <string name="title_account_unifiedpush_test_fail">Test failed: no endpoint registered</string>
     <string name="title_account_notify">Separate notifications</string>
     <string name="title_account_left">Swipe left</string>
     <string name="title_account_right">Swipe right</string>

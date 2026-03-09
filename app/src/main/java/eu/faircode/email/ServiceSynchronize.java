@@ -1208,6 +1208,10 @@ public class ServiceSynchronize extends ServiceBase implements SharedPreferences
                         onWatchdog(intent);
                         break;
 
+                    case "unifiedpush":
+                        onUnifiedPush(intent);
+                        break;
+
                     default:
                         Log.w("Unknown action: " + action);
                 }
@@ -1505,6 +1509,29 @@ public class ServiceSynchronize extends ServiceBase implements SharedPreferences
 
                     // Prevent service stop
                     eval(ServiceSynchronize.this, "poll");
+                } catch (Throwable ex) {
+                    Log.e(ex);
+                }
+            }
+        });
+    }
+
+    private void onUnifiedPush(Intent intent) {
+        Log.i("UnifiedPush sync triggered");
+        Helper.getSerialExecutor().submit(new RunnableEx("unifiedpush") {
+            @Override
+            public void delegate() {
+                try {
+                    DB db = DB.getInstance(ServiceSynchronize.this);
+                    List<EntityAccount> accounts = db.account().getUnifiedPushAccounts();
+                    for (EntityAccount account : accounts) {
+                        List<EntityFolder> folders = db.folder().getSynchronizingFolders(account.id);
+                        for (EntityFolder folder : folders)
+                            if (folder.selectable)
+                                EntityOperation.sync(ServiceSynchronize.this, folder.id, false);
+                    }
+
+                    eval(ServiceSynchronize.this, "unifiedpush");
                 } catch (Throwable ex) {
                     Log.e(ex);
                 }
@@ -1939,7 +1966,7 @@ public class ServiceSynchronize extends ServiceBase implements SharedPreferences
                         Collections.sort(folders, folders.get(0).getComparator(this));
 
                     for (final EntityFolder folder : folders) {
-                        if (folder.selectable && folder.synchronize && !folder.poll && capIdle && sync) {
+                        if (folder.selectable && folder.synchronize && !folder.poll && capIdle && sync && !account.unifiedpush) {
                             Log.i(account.name + " sync folder " + folder.name);
 
                             db.folder().setFolderState(folder.id, "connecting");
@@ -2525,7 +2552,7 @@ public class ServiceSynchronize extends ServiceBase implements SharedPreferences
                                         account.name + " checking folders");
                                 for (EntityFolder folder : mapFolders.keySet())
                                     if (folder.selectable && folder.synchronize)
-                                        if (!folder.poll && capIdle) {
+                                        if (!folder.poll && capIdle && !account.unifiedpush) {
                                             // Sends folder NOOP
                                             if (!mapFolders.get(folder).isOpen())
                                                 throw new StoreClosedException(iservice.getStore(), "NOOP " + folder.name);

@@ -303,6 +303,15 @@ public interface DaoAccount {
     @Query("UPDATE account SET capability_uidl = :uidl WHERE id = :id AND NOT (capability_uidl IS :uidl)")
     int setAccountUidl(long id, Boolean uidl);
 
+    @Query("UPDATE account SET unifiedpush = :unifiedpush WHERE id = :id AND NOT (unifiedpush IS :unifiedpush)")
+    int setAccountUnifiedPush(long id, boolean unifiedpush);
+
+    @Query("UPDATE account SET unifiedpush_endpoint = :endpoint WHERE id = :id AND NOT (unifiedpush_endpoint IS :endpoint)")
+    int setAccountUnifiedPushEndpoint(long id, String endpoint);
+
+    @Query("SELECT * FROM account WHERE unifiedpush AND synchronize")
+    List<EntityAccount> getUnifiedPushAccounts();
+
     @Query("UPDATE account" +
             " SET last_modified = :last_modified" +
             " WHERE id = :id")

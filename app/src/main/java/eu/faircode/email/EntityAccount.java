@@ -162,6 +162,10 @@ public class EntityAccount extends EntityOrder implements Serializable {
 
     public String conditions;
 
+    @NonNull
+    public Boolean unifiedpush = false;
+    public String unifiedpush_endpoint;
+
     public Long quota_usage;
     public Long quota_limit;
 
@@ -359,6 +363,7 @@ public class EntityAccount extends EntityOrder implements Serializable {
         json.put("use_received", use_received);
         json.put("unicode", unicode);
         json.put("conditions", conditions);
+        json.put("unifiedpush", unifiedpush);
         // not prefix
         // not created
         // not tbd
@@ -454,6 +459,7 @@ public class EntityAccount extends EntityOrder implements Serializable {
         account.use_received = json.optBoolean("use_received", false);
         account.unicode = json.optBoolean("unicode", false);
         account.conditions = json.optString("conditions", null);
+        account.unifiedpush = json.optBoolean("unifiedpush", false);
 
         return account;
     }
@@ -517,6 +523,7 @@ public class EntityAccount extends EntityOrder implements Serializable {
                 a1.use_received == other.use_received &&
                 a1.unicode == other.unicode &&
                 Objects.equals(a1.conditions, other.conditions) &&
+                Objects.equals(a1.unifiedpush, other.unifiedpush) &&
                 (!state || Objects.equals(a1.quota_usage, other.quota_usage)) &&
                 (!state || Objects.equals(a1.quota_limit, other.quota_limit)) &&
                 Objects.equals(a1.created, other.created) &&

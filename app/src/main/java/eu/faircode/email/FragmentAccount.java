@@ -26,6 +26,7 @@ import static eu.faircode.email.ServiceAuthenticator.AUTH_TYPE_OAUTH;
 import static eu.faircode.email.ServiceAuthenticator.AUTH_TYPE_PASSWORD;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
@@ -72,6 +73,7 @@ import com.google.android.material.snackbar.Snackbar;
 import com.google.android.material.textfield.TextInputLayout;
 
 import org.json.JSONObject;
+import org.unifiedpush.android.connector.UnifiedPush;
 
 import java.io.FileNotFoundException;
 import java.net.UnknownHostException;
@@ -127,6 +129,12 @@ public class FragmentAccount extends FragmentBase {
     private CheckBox cbSynchronize;
     private CheckBox cbIgnoreSchedule;
     private CheckBox cbOnDemand;
+    private CheckBox cbUnifiedPush;
+    private TextView tvUnifiedPushStatus;
+    private TextView tvUnifiedPushEndpoint;
+    private Button btnUnifiedPushTest;
+    private String selectedDistributor;
+    private boolean unifiedPushLoading = false;
     private TextView tvLeave;
     private CheckBox cbPrimary;
     private CheckBox cbNotify;
@@ -254,6 +262,10 @@ public class FragmentAccount extends FragmentBase {
         cbSynchronize = view.findViewById(R.id.cbSynchronize);
         cbIgnoreSchedule = view.findViewById(R.id.cbIgnoreSchedule);
         cbOnDemand = view.findViewById(R.id.cbOnDemand);
+        cbUnifiedPush = view.findViewById(R.id.cbUnifiedPush);
+        tvUnifiedPushStatus = view.findViewById(R.id.tvUnifiedPushStatus);
+        tvUnifiedPushEndpoint = view.findViewById(R.id.tvUnifiedPushEndpoint);
+        btnUnifiedPushTest = view.findViewById(R.id.btnUnifiedPushTest);
         tvLeave = view.findViewById(R.id.tvLeave);
         cbPrimary = view.findViewById(R.id.cbPrimary);
         cbNotify = view.findViewById(R.id.cbNotify);
@@ -533,7 +545,80 @@ public class FragmentAccount extends FragmentBase {
             public void onCheckedChanged(CompoundButton compoundButton, boolean checked) {
                 cbIgnoreSchedule.setEnabled(checked);
                 cbOnDemand.setEnabled(checked);
+                cbUnifiedPush.setEnabled(checked);
                 cbPrimary.setEnabled(checked);
+            }
+        });
+
+        cbUnifiedPush.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean checked) {
+                // Skip listener during initial load
+                if (unifiedPushLoading)
+                    return;
+
+                if (checked) {
+                    Context ctx = compoundButton.getContext();
+                    java.util.List<String> distributors = UnifiedPush.getDistributors(ctx);
+                    if (distributors.isEmpty()) {
+                        compoundButton.setChecked(false);
+                        Snackbar.make(view, R.string.title_account_unifiedpush_no_distributor, Snackbar.LENGTH_LONG).show();
+                        return;
+                    }
+                    if (distributors.size() > 1) {
+                        String[] items = distributors.toArray(new String[0]);
+                        new AlertDialog.Builder(ctx)
+                                .setTitle(R.string.title_account_unifiedpush_select)
+                                .setItems(items, (dialog, which) -> {
+                                    selectedDistributor = distributors.get(which);
+                                    showUnifiedPushPendingSave(selectedDistributor);
+                                })
+                                .setNegativeButton(android.R.string.cancel, (dialog, which) ->
+                                        compoundButton.setChecked(false))
+                                .setOnCancelListener(dialog ->
+                                        compoundButton.setChecked(false))
+                                .show();
+                    } else {
+                        selectedDistributor = distributors.get(0);
+                        showUnifiedPushPendingSave(selectedDistributor);
+                    }
+                } else {
+                    selectedDistributor = null;
+                    tvUnifiedPushStatus.setVisibility(View.GONE);
+                    tvUnifiedPushEndpoint.setVisibility(View.GONE);
+                    tvUnifiedPushEndpoint.setTag(null);
+                    btnUnifiedPushTest.setVisibility(View.GONE);
+                }
+            }
+        });
+
+        btnUnifiedPushTest.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String endpoint = (String) tvUnifiedPushEndpoint.getTag();
+                if (endpoint == null || endpoint.isEmpty()) {
+                    Snackbar.make(view, R.string.title_account_unifiedpush_test_fail, Snackbar.LENGTH_LONG).show();
+                    return;
+                }
+
+                new Thread(() -> {
+                    try {
+                        java.net.URL url = new java.net.URL(endpoint);
+                        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                        conn.setRequestMethod("POST");
+                        conn.setDoOutput(true);
+                        conn.getOutputStream().write("FairEmail UnifiedPush test".getBytes());
+                        int code = conn.getResponseCode();
+                        conn.disconnect();
+                        Log.i("UnifiedPush test response=" + code);
+                        v.post(() ->
+                                Snackbar.make(view, R.string.title_account_unifiedpush_test_ok, Snackbar.LENGTH_LONG).show());
+                    } catch (Throwable ex) {
+                        Log.e("UnifiedPush test error", ex);
+                        v.post(() ->
+                                Snackbar.make(view, ex.getMessage(), Snackbar.LENGTH_LONG).show());
+                    }
+                }).start();
             }
         });
 
@@ -760,6 +845,33 @@ public class FragmentAccount extends FragmentBase {
                     Log.unexpectedError(getParentFragmentManager(), ex);
             }
         }.execute(this, args, "account:config");
+    }
+
+    private void showUnifiedPushPendingSave(String distributor) {
+        tvUnifiedPushStatus.setText(getString(R.string.title_account_unifiedpush_save_to_apply, distributor));
+        tvUnifiedPushStatus.setVisibility(View.VISIBLE);
+        tvUnifiedPushEndpoint.setVisibility(View.GONE);
+        tvUnifiedPushEndpoint.setTag(null);
+        btnUnifiedPushTest.setVisibility(View.GONE);
+    }
+
+    private void performUnifiedPushRegistration(Context ctx, String distributor) {
+        try {
+            UnifiedPush.saveDistributor(ctx, distributor);
+            UnifiedPush.register(ctx, "default", null, null);
+            Log.i("UnifiedPush registered with " + distributor);
+        } catch (Throwable ex) {
+            Log.e("UnifiedPush registration error", ex);
+        }
+    }
+
+    private void performUnifiedPushUnregistration(Context ctx) {
+        try {
+            UnifiedPush.unregister(ctx, "default");
+            Log.i("UnifiedPush unregistered");
+        } catch (Throwable ex) {
+            Log.i("UnifiedPush unregister", ex);
+        }
     }
 
     private void onCheck() {
@@ -990,6 +1102,9 @@ public class FragmentAccount extends FragmentBase {
         args.putBoolean("synchronize", cbSynchronize.isChecked());
         args.putBoolean("ignore_schedule", cbIgnoreSchedule.isChecked());
         args.putBoolean("ondemand", cbOnDemand.isChecked());
+        args.putBoolean("unifiedpush", cbUnifiedPush.isChecked());
+        if (selectedDistributor != null)
+            args.putString("unifiedpush_distributor", selectedDistributor);
         args.putBoolean("primary", cbPrimary.isChecked());
         args.putBoolean("notify", cbNotify.isChecked());
         args.putBoolean("summary", cbSummary.isChecked());
@@ -1070,6 +1185,7 @@ public class FragmentAccount extends FragmentBase {
                 boolean synchronize = args.getBoolean("synchronize");
                 boolean ignore_schedule = args.getBoolean("ignore_schedule");
                 boolean ondemand = args.getBoolean("ondemand");
+                boolean unifiedpush = args.getBoolean("unifiedpush");
                 boolean primary = args.getBoolean("primary");
                 boolean notify = args.getBoolean("notify");
                 boolean summary = args.getBoolean("summary");
@@ -1182,6 +1298,8 @@ public class FragmentAccount extends FragmentBase {
                     if (ignore_schedule != jconditions.optBoolean("ignore_schedule"))
                         return true;
                     if (!Objects.equals(account.ondemand, ondemand))
+                        return true;
+                    if (!Objects.equals(account.unifiedpush, unifiedpush))
                         return true;
                     if (!Objects.equals(account.primary, account.synchronize && primary))
                         return true;
@@ -1336,6 +1454,7 @@ public class FragmentAccount extends FragmentBase {
                     account.synchronize = synchronize;
                     jconditions.put("ignore_schedule", ignore_schedule);
                     account.ondemand = ondemand;
+                    account.unifiedpush = unifiedpush;
                     account.primary = (account.synchronize && primary);
                     account.notify = notify;
                     account.summary = summary;
@@ -1524,6 +1643,33 @@ public class FragmentAccount extends FragmentBase {
 
                 args.putBoolean("saved", true);
 
+                // Handle UnifiedPush registration after account is saved
+                if (unifiedpush && synchronize) {
+                    String dist = args.getString("unifiedpush_distributor");
+                    if (dist != null) {
+                        performUnifiedPushRegistration(context, dist);
+                        // Wait for endpoint callback
+                        String endpoint = null;
+                        SharedPreferences uprefs = PreferenceManager.getDefaultSharedPreferences(context);
+                        for (int i = 0; i < 15; i++) {
+                            try {
+                                Thread.sleep(500);
+                            } catch (InterruptedException ignored) {
+                            }
+                            endpoint = uprefs.getString("unifiedpush_endpoint", null);
+                            if (endpoint != null)
+                                break;
+                        }
+                        if (endpoint != null) {
+                            db.account().setAccountUnifiedPushEndpoint(account.id, endpoint);
+                            args.putString("unifiedpush_endpoint", endpoint);
+                        }
+                        args.putString("unifiedpush_distributor_done", dist);
+                    }
+                } else if (!unifiedpush) {
+                    performUnifiedPushUnregistration(context);
+                }
+
                 SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
                 SharedPreferences.Editor editor = prefs.edit();
                 editor.putBoolean("unset." + account.id + "." + EntityFolder.DRAFTS, drafts == null);
@@ -1552,6 +1698,11 @@ public class FragmentAccount extends FragmentBase {
                     Context context = getContext();
                     if (context != null)
                         WidgetUnified.updateData(context); // Update color stripe
+
+                    String upDist = args.getString("unifiedpush_distributor_done");
+                    if (upDist != null) {
+                        Snackbar.make(view, getString(R.string.title_account_unifiedpush_registered, upDist), Snackbar.LENGTH_LONG).show();
+                    }
 
                     finish();
 
@@ -1784,6 +1935,38 @@ public class FragmentAccount extends FragmentBase {
                     cbSynchronize.setChecked(account == null ? true : account.synchronize);
                     cbIgnoreSchedule.setChecked(jcondition.optBoolean("ignore_schedule"));
                     cbOnDemand.setChecked(account == null ? false : account.ondemand);
+
+                    unifiedPushLoading = true;
+                    cbUnifiedPush.setChecked(account == null ? false : account.unifiedpush);
+                    unifiedPushLoading = false;
+
+                    if (account != null && account.unifiedpush) {
+                        String ack = UnifiedPush.getAckDistributor(getContext());
+                        if (ack != null) {
+                            tvUnifiedPushStatus.setText(getString(R.string.title_account_unifiedpush_registered, ack));
+                            tvUnifiedPushStatus.setVisibility(View.VISIBLE);
+                        }
+                        // Check DB first, then SharedPreferences fallback
+                        String endpoint = account.unifiedpush_endpoint;
+                        if (endpoint == null) {
+                            SharedPreferences uprefs = PreferenceManager.getDefaultSharedPreferences(getContext());
+                            endpoint = uprefs.getString("unifiedpush_endpoint", null);
+                        }
+                        if (endpoint != null) {
+                            tvUnifiedPushEndpoint.setText(getString(R.string.title_account_unifiedpush_endpoint, endpoint));
+                            tvUnifiedPushEndpoint.setTag(endpoint);
+                            tvUnifiedPushEndpoint.setVisibility(View.VISIBLE);
+                            btnUnifiedPushTest.setVisibility(View.VISIBLE);
+                        } else {
+                            tvUnifiedPushEndpoint.setVisibility(View.GONE);
+                            btnUnifiedPushTest.setVisibility(View.GONE);
+                        }
+                    } else {
+                        tvUnifiedPushStatus.setVisibility(View.GONE);
+                        tvUnifiedPushEndpoint.setVisibility(View.GONE);
+                        btnUnifiedPushTest.setVisibility(View.GONE);
+                    }
+
                     cbPrimary.setChecked(account == null ? false : account.primary);
                     cbBrowse.setChecked(account == null ? true : account.browse);
                     cbAutoSeen.setChecked(account == null ? true : account.auto_seen);
