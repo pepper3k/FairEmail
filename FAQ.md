@@ -444,6 +444,7 @@ Anything on this list is in random order and *might* be added in the near future
 * [(207) What does 'Authentication failed' mean?](#faq207)
 * [(208) What does 'about:blank#blocked' mean when I click on a link?](#faq208)
 * [(209) Why is using a VPN often problematic?](#faq209)
+* [(210) How does UnifiedPush work?](#faq210)
 
 [I have another question.](#get-support)
 
@@ -6449,6 +6450,37 @@ When you use a VPN, you share one network address with many people and not all t
 Email servers often automatically block network addresses (IP addresses) when abuse is detected, for example when someone tries to send spam messages.
 The result is that logins are blocked for everyone using the same network address and the email server issues an error message such as "*Authentication failed*".
 This is also why the app warns against using a VPN.
+
+<br>
+
+<a name="faq210"></a>
+**(210) How does UnifiedPush work?**
+
+&#x1F30E; [Google Translate](https://translate.google.com/translate?sl=en&u=https%3A%2F%2Fm66b.github.io%2FFairEmail%2F%23faq210)
+
+[UnifiedPush](https://unifiedpush.org/) is an open standard for push notifications on Android that does not require Google services.
+It can be used as an alternative to IMAP IDLE for receiving new email notifications, which can save battery
+by offloading the persistent server connection to a separate component.
+
+**How it works:**
+
+1. Install a UnifiedPush distributor app on your device (for example [ntfy](https://ntfy.sh/))
+2. In FairEmail account settings (Advanced), select the UnifiedPush distributor to enable it
+3. FairEmail registers with the distributor and receives an endpoint URL
+4. Configure a server-side component (such as [NotiMail](https://github.com/draga79/NotiMail)) to monitor your inbox via IMAP IDLE and send a push notification to the endpoint URL when new mail arrives
+5. When a push message arrives, FairEmail will sync the account to fetch new messages
+
+**Flow:**
+
+*Email server → NotiMail (IMAP IDLE) → ntfy.sh → ntfy app → FairEmail syncs*
+
+**Requirements:**
+
+* A UnifiedPush distributor app installed on the device
+* A server-side component monitoring your mailbox and pushing to the endpoint URL
+
+Note that UnifiedPush depends on external components (the distributor app and the server-side monitor).
+If any of these are unavailable, email notifications will not be received until the next poll or manual sync.
 
 <br>
 

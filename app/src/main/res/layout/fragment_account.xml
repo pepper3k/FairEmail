@@ -647,6 +647,83 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/cbIgnoreSchedule" />
 
+        <!-- UnifiedPush distributor selector button — part of grpAdvanced group.
+             Status/endpoint/hint/test views below are NOT in grpAdvanced;
+             their visibility is managed by updateUnifiedPushVisibility() to allow
+             conditional show/hide without overriding the group's GONE state. -->
+        <Button
+            android:id="@+id/btnUnifiedPush"
+            style="?android:attr/buttonStyleSmall"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/title_account_unifiedpush"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/cbOnDemand" />
+
+        <TextView
+            android:id="@+id/tvUnifiedPushStatus"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:layout_marginStart="32dp"
+            android:textAppearance="@style/TextAppearance.AppCompat.Small"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/btnUnifiedPush" />
+
+        <TextView
+            android:id="@+id/tvUnifiedPushEndpoint"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:layout_marginStart="32dp"
+            android:textAppearance="@style/TextAppearance.AppCompat.Small"
+            android:textIsSelectable="true"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/tvUnifiedPushStatus" />
+
+        <TextView
+            android:id="@+id/tvUnifiedPushHint"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:layout_marginStart="32dp"
+            android:text="@string/title_account_unifiedpush_hint"
+            android:textAppearance="@style/TextAppearance.AppCompat.Small"
+            android:textStyle="italic"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/tvUnifiedPushEndpoint" />
+
+        <Button
+            android:id="@+id/btnUnifiedPushTest"
+            style="?android:attr/buttonStyleSmall"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="32dp"
+            android:layout_marginTop="6dp"
+            android:text="@string/title_account_unifiedpush_test"
+            android:visibility="gone"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/tvUnifiedPushHint" />
+
+        <Button
+            android:id="@+id/btnUnifiedPushTestEmail"
+            style="?android:attr/buttonStyleSmall"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_marginTop="6dp"
+            android:text="@string/title_account_unifiedpush_test_email"
+            android:visibility="gone"
+            app:layout_constraintStart_toEndOf="@id/btnUnifiedPushTest"
+            app:layout_constraintTop_toBottomOf="@id/tvUnifiedPushHint" />
+
         <TextView
             android:id="@+id/tvLeave"
             android:layout_width="wrap_content"
@@ -656,7 +733,7 @@
             android:textAppearance="@style/TextAppearance.AppCompat.Small"
             android:textColor="?android:attr/textColorLink"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/cbOnDemand" />
+            app:layout_constraintTop_toBottomOf="@id/btnUnifiedPushTestEmail" />
 
         <CheckBox
             android:id="@+id/cbPrimary"
@@ -1316,7 +1393,7 @@
             android:layout_height="0dp"
             app:constraint_referenced_ids="
                 cbNotify,tvNotifyRemark,cbSummary,tvNotifyPro,
-                cbSynchronize,cbIgnoreSchedule,cbOnDemand,tvLeave,cbPrimary,
+                cbSynchronize,cbIgnoreSchedule,cbOnDemand,btnUnifiedPush,tvLeave,cbPrimary,
                 cbBrowse,tvBrowseHint,
                 cbAutoSeen,
                 tvInterval,etInterval,tvIntervalRemark,cbNoop,tvNoopRemark,

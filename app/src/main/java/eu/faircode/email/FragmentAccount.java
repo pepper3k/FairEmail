@@ -26,6 +26,7 @@ import static eu.faircode.email.ServiceAuthenticator.AUTH_TYPE_OAUTH;
 import static eu.faircode.email.ServiceAuthenticator.AUTH_TYPE_PASSWORD;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
@@ -72,6 +73,7 @@ import com.google.android.material.snackbar.Snackbar;
 import com.google.android.material.textfield.TextInputLayout;
 
 import org.json.JSONObject;
+import org.unifiedpush.android.connector.UnifiedPush;
 
 import java.io.FileNotFoundException;
 import java.net.UnknownHostException;
@@ -127,6 +129,12 @@ public class FragmentAccount extends FragmentBase {
     private CheckBox cbSynchronize;
     private CheckBox cbIgnoreSchedule;
     private CheckBox cbOnDemand;
+    private Button btnUnifiedPush;
+    private TextView tvUnifiedPushStatus;
+    private TextView tvUnifiedPushEndpoint;
+    private TextView tvUnifiedPushHint;
+    private Button btnUnifiedPushTest;
+    private Button btnUnifiedPushTestEmail;
     private TextView tvLeave;
     private CheckBox cbPrimary;
     private CheckBox cbNotify;
@@ -254,6 +262,12 @@ public class FragmentAccount extends FragmentBase {
         cbSynchronize = view.findViewById(R.id.cbSynchronize);
         cbIgnoreSchedule = view.findViewById(R.id.cbIgnoreSchedule);
         cbOnDemand = view.findViewById(R.id.cbOnDemand);
+        btnUnifiedPush = view.findViewById(R.id.btnUnifiedPush);
+        tvUnifiedPushStatus = view.findViewById(R.id.tvUnifiedPushStatus);
+        tvUnifiedPushEndpoint = view.findViewById(R.id.tvUnifiedPushEndpoint);
+        tvUnifiedPushHint = view.findViewById(R.id.tvUnifiedPushHint);
+        btnUnifiedPushTest = view.findViewById(R.id.btnUnifiedPushTest);
+        btnUnifiedPushTestEmail = view.findViewById(R.id.btnUnifiedPushTestEmail);
         tvLeave = view.findViewById(R.id.tvLeave);
         cbPrimary = view.findViewById(R.id.cbPrimary);
         cbNotify = view.findViewById(R.id.cbNotify);
@@ -516,6 +530,7 @@ public class FragmentAccount extends FragmentBase {
             public void onClick(View v) {
                 int visibility = (grpAdvanced.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
                 grpAdvanced.setVisibility(visibility);
+                updateUnifiedPushVisibility(visibility == View.VISIBLE);
                 if (visibility == View.VISIBLE)
                     getMainHandler().post(new Runnable() {
                         @Override
@@ -534,6 +549,95 @@ public class FragmentAccount extends FragmentBase {
                 cbIgnoreSchedule.setEnabled(checked);
                 cbOnDemand.setEnabled(checked);
                 cbPrimary.setEnabled(checked);
+                btnUnifiedPush.setEnabled(checked);
+            }
+        });
+
+        // UnifiedPush distributor selector — lists installed distributor apps (e.g. ntfy)
+        // and offers a "Disable" option if already registered.
+        // Registration happens immediately on selection (not deferred to account save).
+        btnUnifiedPush.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Context ctx = v.getContext();
+                java.util.List<String> distributors = UnifiedPush.getDistributors(ctx);
+                if (distributors.isEmpty()) {
+                    Snackbar.make(view, R.string.title_account_unifiedpush_no_distributor, Snackbar.LENGTH_LONG).show();
+                    return;
+                }
+
+                // Append "Disable" to the list if a distributor is already active
+                String saved = UnifiedPush.getSavedDistributor(ctx);
+                java.util.List<String> options = new java.util.ArrayList<>(distributors);
+                if (saved != null)
+                    options.add(getString(R.string.title_account_unifiedpush_disable));
+
+                String[] items = options.toArray(new String[0]);
+                new AlertDialog.Builder(ctx)
+                        .setTitle(R.string.title_account_unifiedpush_select)
+                        .setItems(items, (dialog, which) -> {
+                            if (which == distributors.size()) {
+                                onUnifiedPushDisable(ctx);
+                            } else {
+                                onUnifiedPushRegister(ctx, distributors.get(which));
+                            }
+                        })
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+            }
+        });
+
+        // Test push: POSTs a test message directly to the UP endpoint URL.
+        // The distributor delivers it back to onMessage(), which shows a test notification.
+        btnUnifiedPushTest.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String endpoint = (String) tvUnifiedPushEndpoint.getTag();
+                if (endpoint == null || endpoint.isEmpty()) {
+                    Snackbar.make(view, R.string.title_account_unifiedpush_test_fail, Snackbar.LENGTH_LONG).show();
+                    return;
+                }
+                sendUnifiedPushTest(endpoint);
+            }
+        });
+
+        // Test email: opens a compose window addressed to self, so the user can verify
+        // the full pipeline (send email → NotiMail detects via IMAP IDLE → push → sync).
+        btnUnifiedPushTestEmail.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                new SimpleTask<EntityIdentity>() {
+                    @Override
+                    protected EntityIdentity onExecute(Context context, Bundle args) {
+                        long aid = args.getLong("id");
+                        DB db = DB.getInstance(context);
+                        List<EntityIdentity> identities = db.identity().getIdentities(aid);
+                        return (identities != null && !identities.isEmpty()) ? identities.get(0) : null;
+                    }
+
+                    @Override
+                    protected void onExecuted(Bundle args, EntityIdentity identity) {
+                        if (identity == null) {
+                            Snackbar.make(view, "No identity found for this account", Snackbar.LENGTH_LONG).show();
+                            return;
+                        }
+                        // Pre-fill compose with the account's own email address as recipient
+                        Intent intent = new Intent(getContext(), ActivityCompose.class);
+                        intent.setAction("new");
+                        intent.putExtra("action", "new");
+                        intent.putExtra("account", identity.account);
+                        intent.putExtra("identity", identity.id);
+                        intent.putExtra("to", identity.email);
+                        intent.putExtra("subject", "UnifiedPush test");
+                        intent.putExtra("body", "This is a test email to verify the UnifiedPush notification pipeline.");
+                        startActivity(intent);
+                    }
+
+                    @Override
+                    protected void onException(Bundle args, Throwable ex) {
+                        Log.unexpectedError(getParentFragmentManager(), ex);
+                    }
+                }.execute(FragmentAccount.this, getArguments(), "unifiedpush:testemail");
             }
         });
 
@@ -760,6 +864,252 @@ public class FragmentAccount extends FragmentBase {
                     Log.unexpectedError(getParentFragmentManager(), ex);
             }
         }.execute(this, args, "account:config");
+    }
+
+    // Registers this account with the selected UnifiedPush distributor.
+    // Uses the account ID as the UP instance name for per-account endpoint isolation.
+    // Flow: unregister previous → save distributor → register → store flag in conditions JSON.
+    // The endpoint URL arrives asynchronously via UnifiedPushService.onNewEndpoint(),
+    // which writes it to SharedPreferences; we either read it immediately or listen for it.
+    private void onUnifiedPushRegister(Context ctx, String distributor) {
+        Bundle args = new Bundle();
+        args.putString("distributor", distributor);
+        args.putLong("id", id);
+
+        new SimpleTask<String>() {
+            @Override
+            protected void onPreExecute(Bundle args) {
+                btnUnifiedPush.setEnabled(false);
+                tvUnifiedPushStatus.setText(getString(R.string.title_account_unifiedpush_registering, args.getString("distributor")));
+                tvUnifiedPushStatus.setVisibility(View.VISIBLE);
+            }
+
+            @Override
+            protected String onExecute(Context context, Bundle args) throws Throwable {
+                String distributor = args.getString("distributor");
+                long id = args.getLong("id");
+
+                // Use account ID as UP instance for per-account endpoint isolation
+                String instance = String.valueOf(id);
+
+                // Unregister previous distributor if switching
+                String saved = UnifiedPush.getSavedDistributor(context);
+                if (saved != null) {
+                    try {
+                        UnifiedPush.unregister(context, instance);
+                    } catch (Throwable ex) {
+                        Log.i("UnifiedPush unregister previous", ex);
+                    }
+                }
+
+                // Register with the new distributor — explicit args for Java/Kotlin interop
+                UnifiedPush.saveDistributor(context, distributor);
+                UnifiedPush.register(context, instance, null, null);
+
+                // Store UnifiedPush flag in account.conditions JSON (avoids DB migration)
+                DB db = DB.getInstance(context);
+                EntityAccount account = db.account().getAccount(id);
+                if (account != null) {
+                    JSONObject jconditions = new JSONObject();
+                    if (!TextUtils.isEmpty(account.conditions))
+                        jconditions = new JSONObject(account.conditions);
+                    jconditions.put("unifiedpush", true);
+                    account.conditions = jconditions.toString();
+                    db.account().updateAccount(account);
+                }
+
+                // Try to read endpoint immediately (may already be set by onNewEndpoint callback)
+                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+                return prefs.getString("unifiedpush_endpoint_" + instance, null);
+            }
+
+            @Override
+            protected void onExecuted(Bundle args, String endpoint) {
+                String distributor = args.getString("distributor");
+                btnUnifiedPush.setText(distributor);
+                tvUnifiedPushStatus.setText(getString(R.string.title_account_unifiedpush_registered, distributor));
+                tvUnifiedPushStatus.setVisibility(View.VISIBLE);
+
+                if (endpoint != null) {
+                    showUnifiedPushEndpoint(endpoint, false);
+                } else {
+                    // Endpoint not available yet — the distributor calls onNewEndpoint() async.
+                    // Listen for the account-specific SharedPreferences key to be written.
+                    String prefKey = "unifiedpush_endpoint_" + args.getLong("id");
+                    SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getContext());
+                    prefs.registerOnSharedPreferenceChangeListener(new SharedPreferences.OnSharedPreferenceChangeListener() {
+                        @Override
+                        public void onSharedPreferenceChanged(SharedPreferences prefs, String key) {
+                            if (prefKey.equals(key)) {
+                                prefs.unregisterOnSharedPreferenceChangeListener(this);
+                                String ep = prefs.getString(prefKey, null);
+                                if (ep != null)
+                                    showUnifiedPushEndpoint(ep, false);
+                            }
+                        }
+                    });
+                }
+
+                // Re-evaluate sync state so ServiceSynchronize skips IDLE for this account
+                ServiceSynchronize.eval(getContext(), "unifiedpush");
+            }
+
+            @Override
+            protected void onException(Bundle args, Throwable ex) {
+                tvUnifiedPushStatus.setText(getString(R.string.title_account_unifiedpush_failed));
+                Log.unexpectedError(getParentFragmentManager(), ex);
+            }
+
+            @Override
+            protected void onPostExecute(Bundle args) {
+                // Guaranteed re-enable after both success and failure paths
+                btnUnifiedPush.setEnabled(true);
+            }
+        }.execute(FragmentAccount.this, args, "unifiedpush:register");
+    }
+
+    // Shows the endpoint URL and makes test buttons visible after successful registration.
+    // The endpoint is stored in the tag for later retrieval by test button click handlers.
+    private void showUnifiedPushEndpoint(String endpoint, boolean autoTest) {
+        tvUnifiedPushEndpoint.setText(getString(R.string.title_account_unifiedpush_endpoint, endpoint));
+        tvUnifiedPushEndpoint.setTag(endpoint);
+        tvUnifiedPushEndpoint.setVisibility(View.VISIBLE);
+        tvUnifiedPushHint.setVisibility(View.VISIBLE);
+        btnUnifiedPushTest.setVisibility(View.VISIBLE);
+        btnUnifiedPushTestEmail.setVisibility(View.VISIBLE);
+
+        if (autoTest)
+            sendUnifiedPushTest(endpoint);
+    }
+
+    // Syncs UnifiedPush view visibility with the Advanced toggle.
+    // These views are NOT in grpAdvanced (ConstraintLayout Group) because group members
+    // set to VISIBLE would override the group's GONE state. Instead, visibility is
+    // managed independently here, called from: Advanced button click, data load, and
+    // savedInstanceState restore.
+    private void updateUnifiedPushVisibility(boolean advancedVisible) {
+        if (!advancedVisible) {
+            tvUnifiedPushStatus.setVisibility(View.GONE);
+            tvUnifiedPushEndpoint.setVisibility(View.GONE);
+            tvUnifiedPushHint.setVisibility(View.GONE);
+            btnUnifiedPushTest.setVisibility(View.GONE);
+            btnUnifiedPushTestEmail.setVisibility(View.GONE);
+            return;
+        }
+        // When Advanced is visible, show only views that have content
+        boolean hasStatus = (tvUnifiedPushStatus.getText() != null && tvUnifiedPushStatus.getText().length() > 0);
+        boolean hasEndpoint = (tvUnifiedPushEndpoint.getTag() != null);
+        tvUnifiedPushStatus.setVisibility(hasStatus ? View.VISIBLE : View.GONE);
+        tvUnifiedPushEndpoint.setVisibility(hasEndpoint ? View.VISIBLE : View.GONE);
+        tvUnifiedPushHint.setVisibility(hasEndpoint ? View.VISIBLE : View.GONE);
+        btnUnifiedPushTest.setVisibility(hasEndpoint ? View.VISIBLE : View.GONE);
+        btnUnifiedPushTestEmail.setVisibility(hasEndpoint ? View.VISIBLE : View.GONE);
+    }
+
+    // Sends a test push message directly to the endpoint URL via HTTP POST.
+    // The distributor delivers it to onMessage(), which shows a test notification.
+    private void sendUnifiedPushTest(String endpoint) {
+        Bundle args = new Bundle();
+        args.putString("endpoint", endpoint);
+
+        new SimpleTask<Integer>() {
+            @Override
+            protected Integer onExecute(Context context, Bundle args) throws Throwable {
+                String endpoint = args.getString("endpoint");
+                java.net.URL url = new java.net.URL(endpoint);
+                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setDoOutput(true);
+                conn.getOutputStream().write(UnifiedPushService.TEST_PREFIX.getBytes());
+                int code = conn.getResponseCode();
+                conn.disconnect();
+                return code;
+            }
+
+            @Override
+            protected void onExecuted(Bundle args, Integer code) {
+                Snackbar.make(view, R.string.title_account_unifiedpush_test_ok, Snackbar.LENGTH_LONG).show();
+            }
+
+            @Override
+            protected void onException(Bundle args, Throwable ex) {
+                Snackbar.make(view, ex.getMessage(), Snackbar.LENGTH_LONG).show();
+            }
+        }.execute(FragmentAccount.this, args, "unifiedpush:test");
+    }
+
+    // Disables UnifiedPush for this account: unregisters from the distributor,
+    // removes the flag from conditions JSON, and clears the endpoint from SharedPreferences.
+    // After disable, ServiceSynchronize will resume IDLE connections for this account.
+    private void onUnifiedPushDisable(Context ctx) {
+        Bundle args = new Bundle();
+        args.putLong("id", id);
+
+        new SimpleTask<Void>() {
+            @Override
+            protected void onPreExecute(Bundle args) {
+                btnUnifiedPush.setEnabled(false);
+            }
+
+            @Override
+            protected Void onExecute(Context context, Bundle args) throws Throwable {
+                long id = args.getLong("id");
+
+                // Use account ID as UP instance (matches registration)
+                String instance = String.valueOf(id);
+
+                try {
+                    UnifiedPush.unregister(context, instance);
+                } catch (Throwable ex) {
+                    Log.i("UnifiedPush unregister", ex);
+                }
+
+                // Remove UnifiedPush flags from account.conditions JSON
+                DB db = DB.getInstance(context);
+                EntityAccount account = db.account().getAccount(id);
+                if (account != null) {
+                    JSONObject jconditions = new JSONObject();
+                    if (!TextUtils.isEmpty(account.conditions))
+                        jconditions = new JSONObject(account.conditions);
+                    jconditions.remove("unifiedpush");
+                    jconditions.remove("unifiedpush_endpoint");
+                    account.conditions = jconditions.toString();
+                    db.account().updateAccount(account);
+                }
+
+                // Clear account-specific endpoint from SharedPreferences
+                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+                prefs.edit().remove("unifiedpush_endpoint_" + instance).apply();
+
+                return null;
+            }
+
+            @Override
+            protected void onExecuted(Bundle args, Void result) {
+                // Reset UI to unregistered state
+                btnUnifiedPush.setText(R.string.title_account_unifiedpush);
+                tvUnifiedPushStatus.setVisibility(View.GONE);
+                tvUnifiedPushEndpoint.setVisibility(View.GONE);
+                tvUnifiedPushEndpoint.setTag(null);
+                tvUnifiedPushHint.setVisibility(View.GONE);
+                btnUnifiedPushTest.setVisibility(View.GONE);
+                btnUnifiedPushTestEmail.setVisibility(View.GONE);
+
+                // Re-evaluate so ServiceSynchronize resumes IDLE for this account
+                ServiceSynchronize.eval(getContext(), "unifiedpush");
+            }
+
+            @Override
+            protected void onException(Bundle args, Throwable ex) {
+                Log.unexpectedError(getParentFragmentManager(), ex);
+            }
+
+            @Override
+            protected void onPostExecute(Bundle args) {
+                // Guaranteed re-enable after both success and failure paths
+                btnUnifiedPush.setEnabled(true);
+            }
+        }.execute(FragmentAccount.this, args, "unifiedpush:disable");
     }
 
     private void onCheck() {
@@ -1784,6 +2134,32 @@ public class FragmentAccount extends FragmentBase {
                     cbSynchronize.setChecked(account == null ? true : account.synchronize);
                     cbIgnoreSchedule.setChecked(jcondition.optBoolean("ignore_schedule"));
                     cbOnDemand.setChecked(account == null ? false : account.ondemand);
+
+                    // Restore UnifiedPush UI state from conditions JSON on data load.
+                    // Only sets text/tags here — actual visibility is managed by
+                    // updateUnifiedPushVisibility() to stay in sync with the Advanced toggle.
+                    boolean accountUnifiedPush = jcondition.optBoolean("unifiedpush");
+                    if (accountUnifiedPush) {
+                        // Show which distributor is active
+                        String ack = UnifiedPush.getAckDistributor(getContext());
+                        btnUnifiedPush.setText(ack != null ? ack : getString(R.string.title_account_unifiedpush));
+                        tvUnifiedPushStatus.setText(getString(R.string.title_account_unifiedpush_registered,
+                                ack != null ? ack : "?"));
+
+                        // Restore endpoint from account-specific SharedPreferences key
+                        SharedPreferences uprefs = PreferenceManager.getDefaultSharedPreferences(getContext());
+                        String endpoint = uprefs.getString("unifiedpush_endpoint_" + id, null);
+                        if (endpoint != null) {
+                            tvUnifiedPushEndpoint.setText(getString(R.string.title_account_unifiedpush_endpoint, endpoint));
+                            tvUnifiedPushEndpoint.setTag(endpoint);
+                        }
+                    } else {
+                        btnUnifiedPush.setText(R.string.title_account_unifiedpush);
+                        tvUnifiedPushStatus.setText(null);
+                        tvUnifiedPushEndpoint.setTag(null);
+                    }
+                    updateUnifiedPushVisibility(grpAdvanced.getVisibility() == View.VISIBLE);
+
                     cbPrimary.setChecked(account == null ? false : account.primary);
                     cbBrowse.setChecked(account == null ? true : account.browse);
                     cbAutoSeen.setChecked(account == null ? true : account.auto_seen);
@@ -1835,6 +2211,7 @@ public class FragmentAccount extends FragmentBase {
 
                     tilPassword.getEditText().setText(savedInstanceState.getString("fair:password"));
                     grpAdvanced.setVisibility(savedInstanceState.getInt("fair:advanced"));
+                    updateUnifiedPushVisibility(grpAdvanced.getVisibility() == View.VISIBLE);
                     auth = savedInstanceState.getInt("fair:auth");
                     provider = savedInstanceState.getString("fair:authprovider");
                     avatar = savedInstanceState.getString("fair:avatar");

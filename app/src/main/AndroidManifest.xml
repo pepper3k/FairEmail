@@ -634,6 +634,16 @@
             android:name=".ServiceUI"
             android:exported="false" />
 
+        <!-- UnifiedPush connector service — receives push events from distributor apps (e.g. ntfy).
+             Not exported: only the UP connector library delivers intents to this service. -->
+        <service
+            android:name=".UnifiedPushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.PUSH_EVENT" />
+            </intent-filter>
+        </service>
+
         <service
             android:name=".ServiceTileClear"
             android:exported="true"

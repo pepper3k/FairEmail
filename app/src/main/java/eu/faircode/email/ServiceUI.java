@@ -184,6 +184,11 @@ public class ServiceUI extends IntentService {
                     onAlarm(intent);
                     break;
 
+                case "unifiedpush":
+                    // Triggered by UnifiedPushService.onMessage() when a push arrives
+                    onUnifiedPush();
+                    break;
+
                 default:
                     throw new IllegalArgumentException("Unknown UI action: " + parts[0]);
             }
@@ -525,6 +530,43 @@ public class ServiceUI extends IntentService {
 
     private void onAlarm(Intent intent) {
         MediaPlayerHelper.stop(this);
+    }
+
+    // Handles UnifiedPush sync: iterates all syncing IMAP accounts, checks the
+    // conditions JSON for "unifiedpush":true, and queues a sync operation for each
+    // selectable folder. This runs in ServiceUI (lightweight IntentService) rather
+    // than ServiceSynchronize to avoid foreground service lifecycle concerns.
+    // Follows the same transaction pattern as onSync().
+    private void onUnifiedPush() {
+        Log.i("UnifiedPush sync via ServiceUI");
+        DB db = DB.getInstance(this);
+        try {
+            db.beginTransaction();
+
+            List<EntityAccount> accounts = db.account().getSynchronizingAccounts(EntityAccount.TYPE_IMAP);
+            for (EntityAccount account : accounts) {
+                // Read UnifiedPush flag from account.conditions JSON (no DB migration needed)
+                boolean unifiedpush = false;
+                try {
+                    if (!TextUtils.isEmpty(account.conditions))
+                        unifiedpush = new org.json.JSONObject(account.conditions).optBoolean("unifiedpush");
+                } catch (Throwable ex) {
+                    Log.e(ex);
+                }
+                if (unifiedpush) {
+                    List<EntityFolder> folders = db.folder().getSynchronizingFolders(account.id);
+                    if (folders.size() > 0)
+                        Collections.sort(folders, folders.get(0).getComparator(this));
+                    for (EntityFolder folder : folders)
+                        if (folder.selectable)
+                            EntityOperation.sync(this, folder.id, true);
+                }
+            }
+
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
     }
 
     static void sync(Context context, Long account) {

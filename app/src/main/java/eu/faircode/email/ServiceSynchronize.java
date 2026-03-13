@@ -1938,8 +1938,20 @@ public class ServiceSynchronize extends ServiceBase implements SharedPreferences
                     if (folders.size() > 0)
                         Collections.sort(folders, folders.get(0).getComparator(this));
 
+                    // Check if this account uses UnifiedPush for notifications.
+                    // If so, skip IDLE connections — push notifications arrive via the
+                    // distributor app, and sync is triggered by ServiceUI instead.
+                    boolean accountUnifiedPush = false;
+                    try {
+                        if (!TextUtils.isEmpty(account.conditions))
+                            accountUnifiedPush = new JSONObject(account.conditions).optBoolean("unifiedpush");
+                    } catch (Throwable ex) {
+                        Log.e(ex);
+                    }
+
                     for (final EntityFolder folder : folders) {
-                        if (folder.selectable && folder.synchronize && !folder.poll && capIdle && sync) {
+                        // Skip IDLE for UnifiedPush accounts — no persistent IMAP connection needed
+                        if (folder.selectable && folder.synchronize && !folder.poll && capIdle && sync && !accountUnifiedPush) {
                             Log.i(account.name + " sync folder " + folder.name);
 
                             db.folder().setFolderState(folder.id, "connecting");
@@ -2525,7 +2537,9 @@ public class ServiceSynchronize extends ServiceBase implements SharedPreferences
                                         account.name + " checking folders");
                                 for (EntityFolder folder : mapFolders.keySet())
                                     if (folder.selectable && folder.synchronize)
-                                        if (!folder.poll && capIdle) {
+                                        // Skip NOOP for UnifiedPush accounts — no IDLE folders are open,
+                                        // so calling isOpen() would NPE on a null IMAPFolder reference
+                                        if (!folder.poll && capIdle && !accountUnifiedPush) {
                                             // Sends folder NOOP
                                             if (!mapFolders.get(folder).isOpen())
                                                 throw new StoreClosedException(iservice.getStore(), "NOOP " + folder.name);
